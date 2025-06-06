@@ -1411,7 +1411,7 @@ class KalmanFilter:
         )[:2]
         return (smoothed_state_means, smoothed_state_covariances)
 
-    def em(self, X, y=None, n_iter=10, em_vars=None):
+    def em(self, X, y=None, n_iter=10, em_vars=None, em_var_masks=None):
         """Apply the EM algorithm.
 
         Apply the EM algorithm to estimate all parameters specified by
@@ -1429,6 +1429,10 @@ class KalmanFilter:
         em_vars : iterable of strings or 'all'
             variables to perform EM over.  Any variable not appearing here is
             left untouched.
+        em_var_masks : dict, optional
+            Dictionary mapping parameter names to boolean masks with the same
+            shape as the parameter. ``True`` entries are estimated using EM
+            while ``False`` entries remain fixed at their initial values.
         """
         Z = self._parse_observations(X)
 
@@ -1443,6 +1447,21 @@ class KalmanFilter:
             self.initial_state_mean,
             self.initial_state_covariance,
         ) = self._initialize_parameters()
+
+        if em_var_masks is None:
+            em_var_masks = {}
+
+        # store initial parameters for use with masks
+        initial_params = {
+            "transition_matrices": self.transition_matrices.copy(),
+            "transition_offsets": self.transition_offsets.copy(),
+            "transition_covariance": self.transition_covariance.copy(),
+            "observation_matrices": self.observation_matrices.copy(),
+            "observation_offsets": self.observation_offsets.copy(),
+            "observation_covariance": self.observation_covariance.copy(),
+            "initial_state_mean": self.initial_state_mean.copy(),
+            "initial_state_covariance": self.initial_state_covariance.copy(),
+        }
 
         # Create dictionary of variables not to perform EM on
         if em_vars is None:
@@ -1509,14 +1528,14 @@ class KalmanFilter:
                 smoothed_state_covariances, kalman_smoothing_gains
             )
             (
-                self.transition_matrices,
-                self.observation_matrices,
-                self.transition_offsets,
-                self.observation_offsets,
-                self.transition_covariance,
-                self.observation_covariance,
-                self.initial_state_mean,
-                self.initial_state_covariance,
+                new_transition_matrices,
+                new_observation_matrices,
+                new_transition_offsets,
+                new_observation_offsets,
+                new_transition_covariance,
+                new_observation_covariance,
+                new_initial_state_mean,
+                new_initial_state_covariance,
             ) = _em(
                 Z,
                 self.transition_offsets,
@@ -1526,6 +1545,24 @@ class KalmanFilter:
                 sigma_pair_smooth,
                 given=given,
             )
+
+            # apply masks to keep selected elements fixed
+            for name, new_val in [
+                ("transition_matrices", new_transition_matrices),
+                ("observation_matrices", new_observation_matrices),
+                ("transition_offsets", new_transition_offsets),
+                ("observation_offsets", new_observation_offsets),
+                ("transition_covariance", new_transition_covariance),
+                ("observation_covariance", new_observation_covariance),
+                ("initial_state_mean", new_initial_state_mean),
+                ("initial_state_covariance", new_initial_state_covariance),
+            ]:
+                mask = em_var_masks.get(name)
+                if mask is not None:
+                    init_val = initial_params[name]
+                    new_val = np.where(mask, new_val, init_val)
+                setattr(self, name, new_val)
+
         return self
 
     def loglikelihood(self, X):
