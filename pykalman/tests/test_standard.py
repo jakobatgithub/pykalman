@@ -151,6 +151,39 @@ class TestKalmanFilter:
         for i in range(len(loglikelihoods) - 1):
             assert (loglikelihoods[i] < loglikelihoods[i + 1]).all()
 
+    def test_em_partial_update(self, kf_cls, data):
+        if kf_cls.__name__ != "KalmanFilter":
+            pytest.skip("partial update supported only for KalmanFilter")
+
+        kf = kf_cls(
+            data.transition_matrix,
+            data.observation_matrix,
+            data.initial_transition_covariance,
+            data.initial_observation_covariance,
+            data.transition_offsets,
+            data.observation_offset,
+            data.initial_state_mean,
+            data.initial_state_covariance,
+            em_vars="all",
+        )
+
+        init_A = kf.transition_matrices.copy()
+        mask = np.zeros_like(init_A, dtype=bool)
+        mask[:, -1] = True
+
+        kf.em(
+            X=data.observations,
+            n_iter=1,
+            em_var_masks={"transition_matrices": mask},
+        )
+
+        assert_array_almost_equal(
+            kf.transition_matrices[~mask], init_A[~mask]
+        )
+        assert not np.allclose(
+            kf.transition_matrices[mask], init_A[mask]
+        )
+
     def test_kalman_initialize_parameters(self, kf_cls):
         self.check_dims(5, 1, {"transition_matrices": np.eye(5)}, kf_cls)
         self.check_dims(1, 3, {"observation_offsets": np.zeros(3)}, kf_cls)
