@@ -145,9 +145,8 @@ def _loglikelihoods(
     predicted_state_covariances : [n_timesteps, n_dim_state, n_dim_state] array
         covariance of state at time t given observations from times
         [0...t-1] for t in [0...n_timesteps-1]
-    observations : [n_dim_obs] array
-        All observations.  If `observations[t]` is a masked array and any of
-        its values are masked, the observation will be ignored.
+    observations : [n_dim_obs] array or masked array
+        All observations. Missing entries should be masked.
 
     Returns
     -------
@@ -228,7 +227,6 @@ def _filter_predict(
 
     return (predicted_state_mean, predicted_state_covariance)
 
-
 def _filter_correct(
     observation_matrix,
     observation_covariance,
@@ -239,71 +237,69 @@ def _filter_correct(
 ):
     r"""Correct a predicted state with a Kalman Filter update.
 
-    Incorporate observation `observation` from time `t` to turn
+    Incorporate partially observed `observation` from time `t` to turn
     :math:`P(x_t | z_{0:t-1})` into :math:`P(x_t | z_{0:t})`
+
+    Supports missing observation components by using only available entries.
 
     Parameters
     ----------
     observation_matrix : [n_dim_obs, n_dim_state] array
-        observation matrix for time t
+        Observation matrix for time t
     observation_covariance : [n_dim_obs, n_dim_obs] array
-        covariance matrix for observation at time t
+        Covariance matrix for observation at time t
     observation_offset : [n_dim_obs] array
-        offset for observation at time t
+        Offset for observation at time t
     predicted_state_mean : [n_dim_state] array
-        mean of state at time t given observations from times
-        [0...t-1]
+        Mean of state at time t given observations from times [0...t-1]
     predicted_state_covariance : [n_dim_state, n_dim_state] array
-        covariance of state at time t given observations from times
-        [0...t-1]
-    observation : [n_dim_obs] array
-        observation at time t.  If `observation` is a masked array and any of
-        its values are masked, the observation will be ignored.
+        Covariance of state at time t given observations from times [0...t-1]
+    observation : [n_dim_obs] array or masked array
+        Observation at time t. Missing entries should be masked.
 
     Returns
     -------
     kalman_gain : [n_dim_state, n_dim_obs] array
-        Kalman gain matrix for time t
+        Kalman gain matrix for time t (zero columns for missing components)
     corrected_state_mean : [n_dim_state] array
-        mean of state at time t given observations from times
-        [0...t]
+        Updated mean of the state
     corrected_state_covariance : [n_dim_state, n_dim_state] array
-        covariance of state at time t given observations from times
-        [0...t]
+        Updated covariance of the state
     """
-    if not np.any(np.ma.getmask(observation)):
-        predicted_observation_mean = (
-            np.dot(observation_matrix, predicted_state_mean) + observation_offset
-        )
-        predicted_observation_covariance = (
-            np.dot(
-                observation_matrix,
-                np.dot(predicted_state_covariance, observation_matrix.T),
-            )
-            + observation_covariance
-        )
-
-        kalman_gain = np.dot(
-            predicted_state_covariance,
-            np.dot(observation_matrix.T, linalg.pinv(predicted_observation_covariance)),
-        )
-
-        corrected_state_mean = predicted_state_mean + np.dot(
-            kalman_gain, observation - predicted_observation_mean
-        )
-        corrected_state_covariance = predicted_state_covariance - np.dot(
-            kalman_gain, np.dot(observation_matrix, predicted_state_covariance)
-        )
+    if np.ma.isMaskedArray(observation):
+        mask = ~observation.mask
     else:
+        mask = ~np.isnan(observation)
+
+    if np.any(mask):  # At least one component is observed
+        z_obs = observation[mask]
+        H_obs = observation_matrix[mask, :]
+        d_obs = observation_offset[mask]
+        R_obs = observation_covariance[np.ix_(mask, mask)]
+
+        S = H_obs @ predicted_state_covariance @ H_obs.T + R_obs
+        K_obs = predicted_state_covariance @ H_obs.T @ linalg.pinv(S)
+        y = z_obs - H_obs @ predicted_state_mean - d_obs
+
+        corrected_state_mean = predicted_state_mean + K_obs @ y
+        corrected_state_covariance = (
+            predicted_state_covariance
+            - K_obs @ H_obs @ predicted_state_covariance
+        )
+
+        # Build full Kalman gain matrix with zeros in unobserved columns
+        n_dim_state, n_dim_obs = observation_matrix.shape[1], observation_matrix.shape[0]
+        kalman_gain = np.zeros((n_dim_state, n_dim_obs))
+        kalman_gain[:, mask] = K_obs
+
+    else:  # All components are missing
         n_dim_state = predicted_state_covariance.shape[0]
         n_dim_obs = observation_matrix.shape[0]
         kalman_gain = np.zeros((n_dim_state, n_dim_obs))
-
         corrected_state_mean = predicted_state_mean
         corrected_state_covariance = predicted_state_covariance
 
-    return (kalman_gain, corrected_state_mean, corrected_state_covariance)
-
+    return kalman_gain, corrected_state_mean, corrected_state_covariance
 
 def _filter(
     transition_matrices,
@@ -344,10 +340,9 @@ def _filter(
         mean of initial state distribution
     initial_state_covariance : [n_dim_state, n_dim_state] array-like
         covariance of initial state distribution
-    observations : [n_timesteps, n_dim_obs] array
-        observations from times [0...n_timesteps-1].  If `observations` is a
-        masked array and any of `observations[t]` is masked, then
-        `observations[t]` will be treated as a missing observation.
+    observations : [n_timesteps, n_dim_obs] array or masked array
+        observations from times [0...n_timesteps-1]. Missing entries 
+        should be masked.
 
     Returns
     -------
@@ -596,10 +591,9 @@ def _em(
 
     Parameters
     ----------
-    observations : [n_timesteps, n_dim_obs] array
-        observations for times [0...n_timesteps-1].  If observations is a
-        masked array and any of observations[t] is masked, then it will be
-        treated as a missing observation.
+    observations : [n_timesteps, n_dim_obs] array or masked array
+        observations for times [0...n_timesteps-1].  Missing entries should 
+        be masked.
     transition_offsets : [n_dim_state] or [n_timesteps-1, n_dim_state] array
         transition offset
     observation_offsets : [n_dim_obs] or [n_timesteps, n_dim_obs] array
@@ -1191,10 +1185,9 @@ class KalmanFilter:
 
         Parameters
         ----------
-        X : [n_timesteps, n_dim_obs] array-like
-            observations corresponding to times [0...n_timesteps-1].  If `X` is
-            a masked array and any of `X[t]` is masked, then `X[t]` will be
-            treated as a missing observation.
+        X : [n_timesteps, n_dim_obs] array-like or masked array
+            observations corresponding to times [0...n_timesteps-1].
+            Missing entries should be masked.
 
         Returns
         -------
@@ -1261,10 +1254,8 @@ class KalmanFilter:
         filtered_state_covariance : [n_dim_state, n_dim_state] array
             covariance of estimate for state at time t given observations from
             times [1...t]
-        observation : [n_dim_obs] array or None
-            observation from time t+1.  If `observation` is a masked array and
-            any of `observation`'s components are masked or if `observation` is
-            None, then `observation` will be treated as a missing observation.
+        observation : [n_dim_obs] array or masked array or None
+            observation from time t+1. Missing entries should be masked.
         transition_matrix : optional, [n_dim_state, n_dim_state] array
             state transition matrix from time t to t+1.  If unspecified,
             `self.transition_matrices` will be used.
@@ -1358,10 +1349,9 @@ class KalmanFilter:
 
         Parameters
         ----------
-        X : [n_timesteps, n_dim_obs] array-like
-            observations corresponding to times [0...n_timesteps-1].  If `X` is
-            a masked array and any of `X[t]` is masked, then `X[t]` will be
-            treated as a missing observation.
+        X : [n_timesteps, n_dim_obs] array-like or masked array
+            observations corresponding to times [0...n_timesteps-1].
+            Missing entries should be masked.
 
         Returns
         -------
@@ -1421,9 +1411,8 @@ class KalmanFilter:
         Parameters
         ----------
         X : [n_timesteps, n_dim_obs] array-like
-            observations corresponding to times [0...n_timesteps-1].  If `X` is
-            a masked array and any of `X[t]`'s components is masked, then
-            `X[t]` will be treated as a missing observation.
+            observations corresponding to times [0...n_timesteps-1].
+            Missing entries should be masked.
         n_iter : int, optional
             number of EM iterations to perform
         em_vars : iterable of strings or 'all'
