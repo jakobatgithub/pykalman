@@ -267,7 +267,7 @@ def _filter_correct(
         Updated covariance of the state
     """
     if np.ma.isMaskedArray(observation):
-        mask = ~observation.mask
+        mask = np.logical_not(np.ma.getmaskarray(observation))
     else:
         mask = ~np.isnan(observation)
 
