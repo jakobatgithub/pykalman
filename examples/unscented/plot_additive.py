@@ -18,7 +18,7 @@ UKF; and finally the same given by the UKS.
 '''
 import numpy as np
 import pylab as pl
-from pykalman import AdditiveUnscentedKalmanFilter, UnscentedKalmanFilter
+from mykalman import AdditiveUnscentedKalmanFilter, UnscentedKalmanFilter
 
 # initialize parameters
 def transition_function(state, noise):

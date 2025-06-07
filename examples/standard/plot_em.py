@@ -36,8 +36,8 @@ observed data as a function of the EM Algorithm iteration.
 import numpy as np
 import pylab as pl
 
-from pykalman.datasets import load_robot
-from pykalman import KalmanFilter
+from mykalman.datasets import load_robot
+from mykalman import KalmanFilter
 
 # Load data and initialize Kalman Filter
 data = load_robot()

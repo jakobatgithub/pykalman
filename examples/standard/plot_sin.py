@@ -16,7 +16,7 @@ estimates predicted by the Kalman Smoother.
 import numpy as np
 import pylab as pl
 
-from pykalman import KalmanFilter
+from mykalman import KalmanFilter
 
 rnd = np.random.RandomState(0)
 

@@ -1,6 +1,6 @@
 """Utilities for the package."""
 
-from pykalman.utils._sklearn import (
+from mykalman.utils._sklearn import (
     Bunch,
     array1d,
     array2d,

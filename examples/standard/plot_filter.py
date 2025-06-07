@@ -18,7 +18,7 @@ Kalman Filter, and the state estimates given by the Kalman Smoother.
 '''
 import numpy as np
 import pylab as pl
-from pykalman import KalmanFilter
+from mykalman import KalmanFilter
 
 # specify parameters
 random_state = np.random.RandomState(0)

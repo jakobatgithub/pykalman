@@ -1,4 +1,4 @@
-"""Datasets loaders for pykalman."""
+"""Datasets loaders for mykalman."""
 
 from os.path import dirname, join
 
@@ -26,7 +26,7 @@ def load_robot():
 
     Examples
     --------
-    >>> from sktime.libs.pykalman.datasets import load_robot
+    >>> from sktime.libs.mykalman.datasets import load_robot
     >>> data = load_robot()
     >>> data.observations.shape
     (501, 2)

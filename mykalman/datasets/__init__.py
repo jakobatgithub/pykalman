@@ -1,4 +1,4 @@
-"""Datasets for pykalman."""
+"""Datasets for mykalman."""
 
 from .base import load_robot
 

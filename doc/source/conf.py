@@ -15,7 +15,7 @@ import datetime
 import os
 import sys
 
-import pykalman
+import mykalman
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -61,7 +61,7 @@ author = "pykalman developers"
 # built documents.
 #
 # The full version, including alpha/beta/rc tags.
-release = f"{pykalman.__version__}"
+release = f"{mykalman.__version__}"
 # The short X.Y version.
 version = release.rsplit(".", 1)[0]
 
