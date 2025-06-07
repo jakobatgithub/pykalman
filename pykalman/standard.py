@@ -929,27 +929,67 @@ def _em_transition_offset(transition_matrices, smoothed_state_means):
 def _em_observation_offset(observation_matrices, smoothed_state_means, observations):
     r"""Apply the EM algorithm to parameter `observation_offset`.
 
-    Maximize expected log likelihood of observations with respect to the
-    observation offset `observation_offset`.
+    Supports missing observation components using masked arrays.
 
     .. math::
 
-        d = \frac{1}{T} \sum_{t=0}^{T-1} z_t - C_{t} \mathbb{E}[x_{t}]
+        I_i &= \{ t : z_i(t) \text{ is unmasked} \} \\
+        d_i &= \frac{1}{|I_i|} \sum_{t \in I_i} \left[ z_i(t) - \sum_k C_{ik}(t) \mathbb{E}[x_k(t)] \right]
     """
     n_timesteps, n_dim_obs = observations.shape
     observation_offset = np.zeros(n_dim_obs)
-    n_obs = 0
+    counts = np.zeros(n_dim_obs)
+
     for t in range(n_timesteps):
-        if not np.any(np.ma.getmask(observations[t])):
-            observation_matrix = _last_dims(observation_matrices, t)
-            observation_offset += observations[t] - np.dot(
-                observation_matrix, smoothed_state_means[t]
-            )
-            n_obs += 1
-    if n_obs > 0:
-        return (1.0 / n_obs) * observation_offset
-    else:
-        return observation_offset
+        obs_t = observations[t]
+
+        if np.ma.isMaskedArray(obs_t):
+            mask = np.logical_not(np.ma.getmaskarray(obs_t))
+        else:
+            mask = ~np.isnan(obs_t)
+
+        C_t = _last_dims(observation_matrices, t) # observation_matrices[t] if observation_matrices.ndim == 3 else observation_matrices
+        x_t = smoothed_state_means[t]
+
+        prediction = C_t @ x_t  # shape: (n_dim_obs,)
+        residual = obs_t - prediction  # shape: (n_dim_obs,)
+
+        for i in range(n_dim_obs):
+            if mask[i]:
+                observation_offset[i] += residual[i]
+                counts[i] += 1
+
+    # Avoid division by zero
+    valid = counts > 0
+    observation_offset[valid] /= counts[valid]
+
+    return observation_offset
+
+
+# def _em_observation_offset(observation_matrices, smoothed_state_means, observations):
+#     r"""Apply the EM algorithm to parameter `observation_offset`.
+
+#     Maximize expected log likelihood of observations with respect to the
+#     observation offset `observation_offset`.
+
+#     .. math::
+
+#         d = \frac{1}{T} \sum_{t=0}^{T-1} z_t - C_{t} \mathbb{E}[x_{t}]
+#     """
+#     n_timesteps, n_dim_obs = observations.shape
+#     observation_offset = np.zeros(n_dim_obs)
+#     n_obs = 0
+#     for t in range(n_timesteps):
+#         if not np.any(np.ma.getmask(observations[t])):
+#             observation_matrix = _last_dims(observation_matrices, t)
+#             observation_offset += observations[t] - np.dot(
+#                 observation_matrix, smoothed_state_means[t]
+#             )
+#             n_obs += 1
+#     if n_obs > 0:
+#         return (1.0 / n_obs) * observation_offset
+#     else:
+#         return observation_offset
 
 
 class KalmanFilter:
