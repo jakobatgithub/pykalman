@@ -948,7 +948,7 @@ def _em_observation_offset(observation_matrices, smoothed_state_means, observati
         else:
             mask = ~np.isnan(obs_t)
 
-        C_t = _last_dims(observation_matrices, t) # observation_matrices[t] if observation_matrices.ndim == 3 else observation_matrices
+        C_t = _last_dims(observation_matrices, t)
         x_t = smoothed_state_means[t]
 
         prediction = C_t @ x_t  # shape: (n_dim_obs,)
