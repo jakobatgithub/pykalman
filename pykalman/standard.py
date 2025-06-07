@@ -718,31 +718,83 @@ def _em(
 def _em_observation_matrix(
     observations, observation_offsets, smoothed_state_means, smoothed_state_covariances
 ):
-    r"""Apply the EM algorithm to parameter `observation_matrix`.
+    r"""Apply the EM algorithm to parameter `observation_matrix` with masked observations.
 
-    Maximize expected log likelihood of observations with respect to the
-    observation matrix `observation_matrix`.
+    For each observation dimension m, estimate row C_m* using:
 
-    .. math::
+        sum_t z_m(t) * E[x_n(t)] = sum_k C_mk * E[x_n(t) x_k(t)]
 
-        C &= ( \sum_{t=0}^{T-1} (z_t - d_t) \mathbb{E}[x_t]^T )
-             ( \sum_{t=0}^{T-1} \mathbb{E}[x_t x_t^T] )^-1
+    Handles missing values in observations via masks.
 
+    Parameters
+    ----------
+    observations : [n_timesteps, n_dim_obs] masked array
+        Possibly masked observed data `z_t`
+    observation_offsets : [n_timesteps, n_dim_obs] or [n_dim_obs] array
+        Offsets `d_t` to subtract from observations
+    smoothed_state_means : [n_timesteps, n_dim_state] array
+        Smoothed means `E[x_t]`
+    smoothed_state_covariances : [n_timesteps, n_dim_state, n_dim_state] array
+        Smoothed covariances `Var[x_t]`
+
+    Returns
+    -------
+    observation_matrix : [n_dim_obs, n_dim_state] array
+        Estimated observation matrix `C`
     """
-    _, n_dim_state = smoothed_state_means.shape
     n_timesteps, n_dim_obs = observations.shape
-    res1 = np.zeros((n_dim_obs, n_dim_state))
-    res2 = np.zeros((n_dim_state, n_dim_state))
-    for t in range(n_timesteps):
-        if not np.any(np.ma.getmask(observations[t])):
-            observation_offset = _last_dims(observation_offsets, t, ndims=1)
-            res1 += np.outer(
-                observations[t] - observation_offset, smoothed_state_means[t]
-            )
-            res2 += smoothed_state_covariances[t] + np.outer(
-                smoothed_state_means[t], smoothed_state_means[t]
-            )
-    return np.dot(res1, linalg.pinv(res2))
+    n_dim_state = smoothed_state_means.shape[1]
+
+    C = np.zeros((n_dim_obs, n_dim_state))
+
+    for m in range(n_dim_obs):
+        A = np.zeros((n_dim_state,))
+        B = np.zeros((n_dim_state, n_dim_state))
+
+        for t in range(n_timesteps):
+            if not np.ma.is_masked(observations[t, m]):
+                z_mt = observations[t, m]
+                d_t = _last_dims(observation_offsets, t, ndims=1)
+                d_mt = d_t[m]
+                x_t = smoothed_state_means[t]
+                xxT = smoothed_state_covariances[t] + np.outer(x_t, x_t)
+
+                A += (z_mt - d_mt) * x_t
+                B += xxT
+
+        C[m, :] = np.dot(A, linalg.pinv(B))
+
+    return C
+
+
+# def _em_observation_matrix(
+#     observations, observation_offsets, smoothed_state_means, smoothed_state_covariances
+# ):
+#     r"""Apply the EM algorithm to parameter `observation_matrix`.
+
+#     Maximize expected log likelihood of observations with respect to the
+#     observation matrix `observation_matrix`.
+
+#     .. math::
+
+#         C &= ( \sum_{t=0}^{T-1} (z_t - d_t) \mathbb{E}[x_t]^T )
+#              ( \sum_{t=0}^{T-1} \mathbb{E}[x_t x_t^T] )^-1
+
+#     """
+#     _, n_dim_state = smoothed_state_means.shape
+#     n_timesteps, n_dim_obs = observations.shape
+#     res1 = np.zeros((n_dim_obs, n_dim_state))
+#     res2 = np.zeros((n_dim_state, n_dim_state))
+#     for t in range(n_timesteps):
+#         if not np.any(np.ma.getmask(observations[t])):
+#             observation_offset = _last_dims(observation_offsets, t, ndims=1)
+#             res1 += np.outer(
+#                 observations[t] - observation_offset, smoothed_state_means[t]
+#             )
+#             res2 += smoothed_state_covariances[t] + np.outer(
+#                 smoothed_state_means[t], smoothed_state_means[t]
+#             )
+#     return np.dot(res1, linalg.pinv(res2))
 
 
 def _em_observation_covariance(
