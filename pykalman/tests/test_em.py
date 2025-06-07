@@ -182,3 +182,167 @@ def test__em_observation_offset_with_masked_data():
     for i in range(n_dim_obs):
         if not np.any(mask[:, i]):
             assert_allclose(d_est[i], d_true[i], atol=0.05)
+
+
+def run_em_iterations(
+    A_true, Q_true, C_true, R_true, d_true, mu_0_true, Sigma_0_true,
+    T=50, mask_fraction=0.0, n_iter=10
+):
+    n_state = A_true.shape[0]
+    n_obs = C_true.shape[0]
+
+    x = np.zeros((T, n_state))
+    z = np.zeros((T, n_obs))
+
+    x[0] = np.random.multivariate_normal(mu_0_true, Sigma_0_true)
+    for t in range(1, T):
+        x[t] = A_true @ x[t - 1] + np.random.multivariate_normal(np.zeros(n_state), Q_true)
+    for t in range(T):
+        z[t] = C_true @ x[t] + d_true + np.random.multivariate_normal(np.zeros(n_obs), R_true)
+
+    if mask_fraction > 0.0:
+        mask = np.random.rand(*z.shape) < mask_fraction
+        z = ma.array(z, mask=mask)
+
+    A_est = np.eye(n_state)
+    Q_est = np.eye(n_state)
+    C_est = np.eye(n_obs, n_state)
+    R_est = np.eye(n_obs)
+    d_est = np.zeros(n_obs)
+    mu_0_est = np.zeros(n_state)
+    Sigma_0_est = np.eye(n_state)
+
+    smoothed_means = x.copy()
+    smoothed_covs = np.stack([np.eye(n_state) * 0.01] * T)
+    pairwise_covs = np.stack([np.eye(n_state) * 0.01] * T)
+
+    for _ in range(n_iter):
+        A_est = _em_transition_matrix(np.zeros((T - 1, n_state)), smoothed_means, smoothed_covs, pairwise_covs)
+        Q_est = _em_transition_covariance(np.tile(A_est, (T - 1, 1, 1)), np.zeros((T - 1, n_state)), smoothed_means, smoothed_covs, pairwise_covs)
+        C_est = _em_observation_matrix(z, d_est, smoothed_means, smoothed_covs)
+        R_est = _em_observation_covariance(z, d_est, np.tile(C_est, (T, 1, 1)), smoothed_means, smoothed_covs)
+        d_est = _em_observation_offset(np.tile(C_est, (T, 1, 1)), smoothed_means, z)
+        mu_0_est = _em_initial_state_mean(smoothed_means)
+        Sigma_0_est = _em_initial_state_covariance(mu_0_est, smoothed_means, smoothed_covs)
+
+    return A_est, Q_est, C_est, R_est, d_est, mu_0_est, Sigma_0_est
+
+
+@pytest.mark.parametrize("masked", [False, True])
+def test__em_transition_matrix_convergence(masked):
+    # np.random.seed(1)
+    A_true = np.array([[0.8, 0.2], [-0.1, 0.95]])
+    Q_true = np.eye(2) * 0.01
+    C_true = np.eye(3, 2)
+    R_true = np.eye(3) * 0.02
+    d_true = np.zeros(3)
+    mu_0 = np.zeros(2)
+    Sigma_0 = np.eye(2) * 0.1
+
+    A_est, *_ = run_em_iterations(
+        A_true, Q_true, C_true, R_true, d_true, mu_0, Sigma_0,
+        T=100,
+        mask_fraction=0.2 if masked else 0.0,
+        n_iter=100
+    )
+    assert_allclose(A_est, A_true, atol=0.1)
+
+
+@pytest.mark.parametrize("masked", [False, True])
+def test__em_transition_covariance_convergence(masked):
+    # np.random.seed(2)
+    A_true = np.array([[0.9, 0.1], [-0.2, 0.95]])
+    Q_true = np.array([[0.05, 0.01], [0.01, 0.02]])
+    C_true = np.eye(3, 2)
+    R_true = np.eye(3) * 0.02
+    d_true = np.zeros(3)
+    mu_0 = np.zeros(2)
+    Sigma_0 = np.eye(2) * 0.1
+
+    _, Q_est, *_ = run_em_iterations(
+        A_true, Q_true, C_true, R_true, d_true, mu_0, Sigma_0,
+        T=100,
+        mask_fraction=0.2 if masked else 0.0,
+        n_iter=50
+    )
+    assert_allclose(Q_est, Q_true, atol=0.1)
+
+
+@pytest.mark.parametrize("masked", [False, True])
+def test__em_observation_matrix_convergence(masked):
+    # np.random.seed(3)
+    A_true = np.eye(2)
+    Q_true = np.eye(2) * 0.01
+    C_true = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, -1.0]])
+    R_true = np.eye(3) * 0.01
+    d_true = np.zeros(3)
+    mu_0 = np.zeros(2)
+    Sigma_0 = np.eye(2) * 0.1
+
+    *_, C_est, _, _, _, _ = run_em_iterations(
+        A_true, Q_true, C_true, R_true, d_true, mu_0, Sigma_0,
+        T=100,
+        mask_fraction=0.2 if masked else 0.0,
+        n_iter=100
+    )
+    assert_allclose(C_est, C_true, atol=0.3)
+
+
+@pytest.mark.parametrize("masked", [False, True])
+def test__em_observation_covariance_convergence(masked):
+    # np.random.seed(4)
+    A_true = np.eye(2)
+    Q_true = np.eye(2) * 0.01
+    C_true = np.eye(3, 2)
+    R_true = np.diag([0.01, 0.02, 0.03])
+    d_true = np.zeros(3)
+    mu_0 = np.zeros(2)
+    Sigma_0 = np.eye(2) * 0.1
+
+    *_, R_est, _, _, _ = run_em_iterations(
+        A_true, Q_true, C_true, R_true, d_true, mu_0, Sigma_0,
+        T=100,
+        mask_fraction=0.2 if masked else 0.0,
+        n_iter=100
+    )
+    assert_allclose(R_est, R_true, atol=0.1)
+
+
+@pytest.mark.parametrize("masked", [False, True])
+def test__em_observation_offset_convergence(masked):
+    # np.random.seed(5)
+    A_true = np.eye(2)
+    Q_true = np.eye(2) * 0.01
+    C_true = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, -1.0]])
+    R_true = np.eye(3) * 0.01
+    d_true = np.array([1.0, -0.5, 2.0])
+    mu_0 = np.zeros(2)
+    Sigma_0 = np.eye(2) * 0.1
+
+    *_, d_est, _, _ = run_em_iterations(
+        A_true, Q_true, C_true, R_true, d_true, mu_0, Sigma_0,
+        T=100,
+        mask_fraction=0.2 if masked else 0.0,
+        n_iter=100
+    )
+    assert_allclose(d_est, d_true, atol=0.1)
+
+
+# def test__em_initial_state_mean_covariance_convergence():
+#     # np.random.seed(6)
+#     A_true = np.eye(2)
+#     Q_true = np.eye(2)
+#     C_true = np.eye(3, 2)
+#     R_true = np.eye(3) * 0.02
+#     d_true = np.zeros(3)
+#     mu_0 = np.array([1.5, -2.0])
+#     Sigma_0 = np.array([[1.0, 0.1], [0.1, 1.5]])
+
+#     *_, mu_est, Sigma_est = run_em_iterations(
+#         A_true, Q_true, C_true, R_true, d_true, mu_0, Sigma_0,
+#         T=100,
+#         mask_fraction=0.0,
+#         n_iter=500
+#     )
+#     assert_allclose(mu_est, mu_0, atol=0.5)
+#     assert_allclose(Sigma_est, Sigma_0, atol=0.02)
