@@ -1044,6 +1044,64 @@ def _em_transition_offset(transition_matrices, smoothed_state_means):
     else:
         return np.zeros(n_dim_state)
 
+def _em_input_matrix(
+    transition_matrices,
+    smoothed_state_means,
+    inputs,
+    expected_cross = None,
+    regularization=0.0,
+):
+    r"""EM M-step for input matrix B.
+
+    Assuming model:
+        x_t = A_{t-1} x_{t-1} + B u_{t-1} + w_{t-1}
+
+    and deterministic known inputs u_{t-1}, the expected update (for time-varying A)
+    is
+        B = (sum_t [ E[x_t] u_{t-1}^T - A_{t-1} E[x_{t-1}] u_{t-1}^T ]) (sum_t u_{t-1} u_{t-1}^T)^{-1}
+
+    If expected_cross is provided as a precomputed term E[x_{t} u_{t-1}^T] for each t,
+    the numerators will use that directly instead of outer products of means.
+
+    Args:
+        transition_matrices: array-like of shape (T-1, n, n) or (n,n), A_{t-1}.
+        smoothed_state_means: array-like of shape (T, n), E[x_t].
+        inputs: array-like of shape (T-1, m), u_{t-1}.
+        expected_cross: optional array-like of shape (T-1, n, m), E[x_t u_{t-1}^T].
+            If None, uses outer products of smoothed_state_means[t] and inputs[t].
+        regularization: float, ridge penalty added to denominator (lambda*I).
+
+    Returns:
+        B: array of shape (n, m)
+    """
+    smoothed_state_means = np.asarray(smoothed_state_means)
+    inputs = np.asarray(inputs)
+    n_timesteps, n_dim_state = smoothed_state_means.shape
+    assert inputs.shape[0] == max(0, n_timesteps - 1), "inputs length must be T-1"
+    m = inputs.shape[1]
+
+    num = np.zeros((n_dim_state, m))
+    denom = np.zeros((m, m))
+    for t in range(1, n_timesteps):
+        A_prev = _last_dims(transition_matrices, t - 1)
+        u_prev = inputs[t - 1 : t]  # shape (1, m)
+        if expected_cross is not None:
+            ex = np.asarray(expected_cross)[t - 1]  # shape (n, m)
+        else:
+            ex = np.outer(smoothed_state_means[t], u_prev.ravel())  # E[x_t] u_{t-1}^T
+        term = ex - A_prev @ np.outer(smoothed_state_means[t - 1], u_prev.ravel())
+        num += term
+        denom += u_prev.T @ u_prev  # u_{t-1} u_{t-1}^T
+
+    # regularize denominator
+    if regularization > 0:
+        denom = denom + regularization * np.eye(m)
+
+    if n_timesteps > 1:
+        B = num @ np.linalg.pinv(denom)
+    else:
+        B = np.zeros((n_dim_state, m))
+    return B
 
 def _em_observation_offset(observation_matrices, smoothed_state_means, observations):
     r"""Apply the EM algorithm to parameter `observation_offset`.
