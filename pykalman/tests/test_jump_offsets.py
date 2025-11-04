@@ -27,7 +27,7 @@ class TestJumpOffsets:
         initial_state_mean = np.array([0.0])
         initial_state_covariance = np.array([[1.0]])
         
-        # Constant jump of 0.5 at each timestep (n_timesteps-1 rows)
+        # Constant jump of 0.5 applied at each transition (constant, will be broadcast)
         jump_offsets = np.array([0.5])
         
         # Generate observations
