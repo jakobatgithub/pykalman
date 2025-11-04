@@ -1226,10 +1226,10 @@ class UnscentedKalmanFilter(UnscentedMixin):
         Returns
         -------
         smoothed_state_means : [n_timesteps, n_dim_state] array
-            filtered_state_means[t] = mean of state distribution at time t given
+            smoothed_state_means[t] = mean of state distribution at time t given
             observations from times [0, n_timesteps-1]
         smoothed_state_covariances : [n_timesteps, n_dim_state, n_dim_state] array
-            filtered_state_covariances[t] = covariance of state distribution at
+            smoothed_state_covariances[t] = covariance of state distribution at
             time t given observations from times [0, n_timesteps-1]
         """
         Z = self._parse_observations(Z)
@@ -1620,13 +1620,13 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
         Returns
         -------
         smoothed_state_means : [n_timesteps, n_dim_state] array
-            filtered_state_means[t] = mean of state distribution at time t given
+            smoothed_state_means[t] = mean of state distribution at time t given
             observations from times [0, n_timesteps-1]
         smoothed_state_covariances : [n_timesteps, n_dim_state, n_dim_state] array
-            filtered_state_covariances[t] = covariance of state distribution at
+            smoothed_state_covariances[t] = covariance of state distribution at
             time t given observations from times [0, n_timesteps-1]
         """
-        Z = ma.asarray(Z)
+        Z = self._parse_observations(Z)
 
         (
             transition_functions,
