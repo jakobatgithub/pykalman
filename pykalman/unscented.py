@@ -1013,7 +1013,7 @@ class UnscentedKalmanFilter(UnscentedMixin):
 
         return (x, ma.asarray(z))
 
-    def filter(self, Z, U=None):
+    def filter(self, Z, U=None, jump_offsets=None):
         """Run Unscented Kalman Filter.
 
         Parameters
@@ -1025,6 +1025,10 @@ class UnscentedKalmanFilter(UnscentedMixin):
         U : [n_timesteps-1, n_dim_input] array, optional
             U[t] = control input at time t. If not provided, will use
             self.transition_inputs if available.
+        jump_offsets : [n_timesteps-1, n_dim_state] or [n_dim_state] array, optional
+            jump_offsets[t] is the instantaneous jump (Dirac Delta-like input)
+            applied to the state at time step t that affects the state at time t+1.
+            If not provided, will use self.jump_offsets if available.
 
         Returns
         -------
@@ -1052,10 +1056,11 @@ class UnscentedKalmanFilter(UnscentedMixin):
         if U is not None:
             U = ma.asarray(U)
         
-        # Use instance jump_offsets if available
-        jump_offsets_to_use = self.jump_offsets
-        if jump_offsets_to_use is not None:
-            jump_offsets_to_use = ma.asarray(jump_offsets_to_use)
+        # Use provided jump_offsets or fall back to instance jump_offsets
+        if jump_offsets is None:
+            jump_offsets = self.jump_offsets
+        if jump_offsets is not None:
+            jump_offsets = ma.asarray(jump_offsets)
 
         (filtered_state_means, filtered_state_covariances) = augmented_unscented_filter(
             initial_state_mean,
@@ -1066,7 +1071,7 @@ class UnscentedKalmanFilter(UnscentedMixin):
             observation_covariance,
             Z,
             U,
-            jump_offsets_to_use,
+            jump_offsets,
         )
 
         return (filtered_state_means, filtered_state_covariances)
@@ -1201,7 +1206,7 @@ class UnscentedKalmanFilter(UnscentedMixin):
 
         return (next_filtered_state_mean, next_filtered_state_covariance)
 
-    def smooth(self, Z, U=None):
+    def smooth(self, Z, U=None, jump_offsets=None):
         """Run Unscented Kalman Smoother.
 
         Parameters
@@ -1213,6 +1218,10 @@ class UnscentedKalmanFilter(UnscentedMixin):
         U : [n_timesteps-1, n_dim_input] array, optional
             U[t] = control input at time t. If not provided, will use
             self.transition_inputs if available.
+        jump_offsets : [n_timesteps-1, n_dim_state] or [n_dim_state] array, optional
+            jump_offsets[t] is the instantaneous jump (Dirac Delta-like input)
+            applied to the state at time step t that affects the state at time t+1.
+            If not provided, will use self.jump_offsets if available.
 
         Returns
         -------
@@ -1240,12 +1249,13 @@ class UnscentedKalmanFilter(UnscentedMixin):
         if U is not None:
             U = ma.asarray(U)
         
-        # Use instance jump_offsets if available
-        jump_offsets_to_use = self.jump_offsets
-        if jump_offsets_to_use is not None:
-            jump_offsets_to_use = ma.asarray(jump_offsets_to_use)
+        # Use provided jump_offsets or fall back to instance jump_offsets
+        if jump_offsets is None:
+            jump_offsets = self.jump_offsets
+        if jump_offsets is not None:
+            jump_offsets = ma.asarray(jump_offsets)
 
-        (filtered_state_means, filtered_state_covariances) = self.filter(Z, U)
+        (filtered_state_means, filtered_state_covariances) = self.filter(Z, U, jump_offsets)
         (
             smoothed_state_means,
             smoothed_state_covariances,
@@ -1255,7 +1265,7 @@ class UnscentedKalmanFilter(UnscentedMixin):
             transition_functions,
             transition_covariance,
             U,
-            jump_offsets_to_use,
+            jump_offsets,
         )
 
         return (smoothed_state_means, smoothed_state_covariances)
@@ -1404,7 +1414,7 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
 
         return (x, ma.asarray(z))
 
-    def filter(self, Z, U=None):
+    def filter(self, Z, U=None, jump_offsets=None):
         """Run Unscented Kalman Filter.
 
         Parameters
@@ -1416,6 +1426,10 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
         U : [n_timesteps-1, n_dim_input] array, optional
             U[t] = control input at time t. If not provided, will use
             self.transition_inputs if available.
+        jump_offsets : [n_timesteps-1, n_dim_state] or [n_dim_state] array, optional
+            jump_offsets[t] is the instantaneous jump (Dirac Delta-like input)
+            applied to the state at time step t that affects the state at time t+1.
+            If not provided, will use self.jump_offsets if available.
 
         Returns
         -------
@@ -1443,10 +1457,11 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
         if U is not None:
             U = ma.asarray(U)
         
-        # Use instance jump_offsets if available
-        jump_offsets_to_use = self.jump_offsets
-        if jump_offsets_to_use is not None:
-            jump_offsets_to_use = ma.asarray(jump_offsets_to_use)
+        # Use provided jump_offsets or fall back to instance jump_offsets
+        if jump_offsets is None:
+            jump_offsets = self.jump_offsets
+        if jump_offsets is not None:
+            jump_offsets = ma.asarray(jump_offsets)
 
         (filtered_state_means, filtered_state_covariances) = additive_unscented_filter(
             initial_state_mean,
@@ -1457,7 +1472,7 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
             observation_covariance,
             Z,
             U,
-            jump_offsets_to_use,
+            jump_offsets,
         )
 
         return (filtered_state_means, filtered_state_covariances)
@@ -1585,7 +1600,7 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
 
         return (next_filtered_state_mean, next_filtered_state_covariance)
 
-    def smooth(self, Z, U=None):
+    def smooth(self, Z, U=None, jump_offsets=None):
         """Run Unscented Kalman Smoother.
 
         Parameters
@@ -1597,6 +1612,10 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
         U : [n_timesteps-1, n_dim_input] array, optional
             U[t] = control input at time t. If not provided, will use
             self.transition_inputs if available.
+        jump_offsets : [n_timesteps-1, n_dim_state] or [n_dim_state] array, optional
+            jump_offsets[t] is the instantaneous jump (Dirac Delta-like input)
+            applied to the state at time step t that affects the state at time t+1.
+            If not provided, will use self.jump_offsets if available.
 
         Returns
         -------
@@ -1624,12 +1643,13 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
         if U is not None:
             U = ma.asarray(U)
         
-        # Use instance jump_offsets if available
-        jump_offsets_to_use = self.jump_offsets
-        if jump_offsets_to_use is not None:
-            jump_offsets_to_use = ma.asarray(jump_offsets_to_use)
+        # Use provided jump_offsets or fall back to instance jump_offsets
+        if jump_offsets is None:
+            jump_offsets = self.jump_offsets
+        if jump_offsets is not None:
+            jump_offsets = ma.asarray(jump_offsets)
 
-        (filtered_state_means, filtered_state_covariances) = self.filter(Z, U)
+        (filtered_state_means, filtered_state_covariances) = self.filter(Z, U, jump_offsets)
         (
             smoothed_state_means,
             smoothed_state_covariances,
@@ -1639,7 +1659,7 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
             transition_functions,
             transition_covariance,
             U,
-            jump_offsets_to_use,
+            jump_offsets,
         )
 
         return (smoothed_state_means, smoothed_state_covariances)
