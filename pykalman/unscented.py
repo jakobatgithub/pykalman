@@ -355,9 +355,10 @@ def unscented_filter_predict(
     # Wrap transition function to include input if provided
     if transition_input is not None:
         original_func = transition_function
-        transition_function = lambda state, noise=None: (
-            original_func(state, transition_input, noise) if noise is not None
-            else original_func(state, transition_input)
+        ti = transition_input  # Capture the value to avoid closure issues
+        transition_function = lambda state, noise=None, ti=ti: (
+            original_func(state, ti, noise) if noise is not None
+            else original_func(state, ti)
         )
     
     (points_pred, moments_pred) = unscented_transform(
@@ -565,7 +566,8 @@ def augmented_unscented_smoother(mu_filt, sigma_filt, f, Q, U=None):
         # Wrap transition function to include input if provided
         if transition_input is not None:
             original_func = f_t
-            f_t_wrapped = lambda state, noise: original_func(state, transition_input, noise)
+            ti = transition_input  # Capture the value to avoid closure issues
+            f_t_wrapped = lambda state, noise, ti=ti: original_func(state, ti, noise)
             (points_pred, moments_pred) = unscented_transform(
                 points_state, f_t_wrapped, points_noise=points_transition
             )
@@ -717,7 +719,8 @@ def additive_unscented_smoother(mu_filt, sigma_filt, f, Q, U=None):
         # Wrap transition function to include input if provided
         if transition_input is not None:
             original_func = f_t
-            f_t_wrapped = lambda state: original_func(state, transition_input)
+            ti = transition_input  # Capture the value to avoid closure issues
+            f_t_wrapped = lambda state, ti=ti: original_func(state, ti)
             (points_pred, moments_pred) = unscented_transform(
                 points_state, f_t_wrapped, sigma_noise=Q
             )
