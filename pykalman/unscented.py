@@ -180,8 +180,8 @@ def unscented_correct(cross_sigma, moments_pred, obs_moments_pred, z):
     obs_moments_pred : [n_dim_obs] Moments
         mean and covariance of observation at time t given observations from
         times [0, t-1]
-    z : [n_dim_obs] array
-        observation at time t
+    z : [n_dim_obs] array or masked array
+        observation at time t. If masked, missing entries are ignored.
 
     Returns
     -------
@@ -192,15 +192,31 @@ def unscented_correct(cross_sigma, moments_pred, obs_moments_pred, z):
     mu_pred, sigma_pred = moments_pred
     obs_mu_pred, obs_sigma_pred = obs_moments_pred
 
-    if not np.any(ma.getmask(z)):
-        # calculate Kalman gain
-        K = cross_sigma.dot(linalg.pinv(obs_sigma_pred))
-
-        # correct mu, sigma
-        mu_filt = mu_pred + K.dot(z - obs_mu_pred)
-        sigma_filt = sigma_pred - K.dot(cross_sigma.T)
+    # Determine which observation components are available
+    if ma.isMaskedArray(z):
+        mask = ~z.mask
     else:
-        # no corrections to be made
+        mask = ~np.isnan(z)
+    
+    # Ensure mask is at least 1D array
+    mask = np.atleast_1d(mask)
+    
+    if np.any(mask):  # At least one component is observed
+        # Extract only the observed components
+        z_obs = np.atleast_1d(z)[mask]
+        obs_mu_pred_obs = np.atleast_1d(obs_mu_pred)[mask]
+        obs_sigma_pred_2d = np.atleast_2d(obs_sigma_pred)
+        obs_sigma_pred_obs = obs_sigma_pred_2d[np.ix_(mask, mask)]
+        cross_sigma_obs = cross_sigma[:, mask]
+        
+        # Calculate Kalman gain for observed components
+        K = cross_sigma_obs.dot(linalg.pinv(obs_sigma_pred_obs))
+
+        # Correct mu, sigma using only observed components
+        mu_filt = mu_pred + K.dot(z_obs - obs_mu_pred_obs)
+        sigma_filt = sigma_pred - K.dot(cross_sigma_obs.T)
+    else:  # All components are missing
+        # No corrections to be made
         mu_filt = mu_pred
         sigma_filt = sigma_pred
     return Moments(mu_filt, sigma_filt)
