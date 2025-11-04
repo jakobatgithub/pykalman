@@ -312,7 +312,8 @@ def augmented_unscented_filter_points(
 
 
 def unscented_filter_predict(
-    transition_function, points_state, points_transition=None, sigma_transition=None
+    transition_function, points_state, points_transition=None, sigma_transition=None,
+    transition_input=None
 ):
     """Predict next state distribution.
 
@@ -333,6 +334,9 @@ def unscented_filter_predict(
     sigma_transition : [n_dim_state, n_dim_state] array
         covariance corresponding to additive noise in transitioning from time
         step t to t+1, if available. If not, assumes noise is not additive.
+    transition_input : [n_dim_input] array, optional
+        control input at time t, if available. If provided, it will be passed
+        to the transition function.
 
     Returns
     -------
@@ -347,6 +351,15 @@ def unscented_filter_predict(
     assert (
         points_transition is not None or sigma_transition is not None
     ), "Your system is noiseless? really?"
+    
+    # Wrap transition function to include input if provided
+    if transition_input is not None:
+        original_func = transition_function
+        transition_function = lambda state, noise=None: (
+            original_func(state, transition_input, noise) if noise is not None
+            else original_func(state, transition_input)
+        )
+    
     (points_pred, moments_pred) = unscented_transform(
         points_state,
         transition_function,
@@ -413,7 +426,7 @@ def unscented_filter_correct(
     return moments_filt
 
 
-def augmented_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z):
+def augmented_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z, U=None):
     """Apply the Unscented Kalman Filter with arbitrary noise.
 
     Parameters
@@ -424,7 +437,8 @@ def augmented_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z):
         covariance of initial state distribution
     f : function or [T-1] array of functions
         state transition function(s). Takes in an the current state and the
-        process noise and outputs the next state.
+        process noise and outputs the next state. If U is provided, takes
+        in the current state, control input, and process noise.
     g : function or [T] array of functions
         observation function(s). Takes in the current state and outputs the
         current observation.
@@ -432,6 +446,9 @@ def augmented_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z):
         transition covariance matrix
     R : [n_dim_state, n_dim_state] array
         observation covariance matrix
+    U : [T-1, n_dim_input] array, optional
+        control inputs for each time step. If provided, U[t] is the input
+        at time step t that affects the state at time t+1.
 
     Returns
     -------
@@ -473,8 +490,10 @@ def augmented_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z):
             moments_pred = points2moments(points_pred)
         else:
             transition_function = _last_dims(f, t - 1, ndims=1)[0]
+            transition_input = _last_dims(U, t - 1, ndims=1) if U is not None else None
             (points_pred, moments_pred) = unscented_filter_predict(
-                transition_function, points_state, points_transition=points_transition
+                transition_function, points_state, points_transition=points_transition,
+                transition_input=transition_input
             )
 
         # Calculate E[z_t | z_{0:t-1}], Var(z_t | z_{0:t-1})
@@ -490,7 +509,7 @@ def augmented_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z):
     return (mu_filt, sigma_filt)
 
 
-def augmented_unscented_smoother(mu_filt, sigma_filt, f, Q):
+def augmented_unscented_smoother(mu_filt, sigma_filt, f, Q, U=None):
     """Apply the Unscented Kalman Smoother with arbitrary noise.
 
     Parameters
@@ -503,9 +522,13 @@ def augmented_unscented_smoother(mu_filt, sigma_filt, f, Q):
         times [0, t]
     f : function or [T-1] array of functions
         state transition function(s). Takes in an the current state and the
-        process noise and outputs the next state.
+        process noise and outputs the next state. If U is provided, takes
+        in the current state, control input, and process noise.
     Q : [n_dim_state, n_dim_state] array
         transition covariance matrix
+    U : [T-1, n_dim_input] array, optional
+        control inputs for each time step. If provided, U[t] is the input
+        at time step t that affects the state at time t+1.
 
     Returns
     -------
@@ -537,9 +560,19 @@ def augmented_unscented_smoother(mu_filt, sigma_filt, f, Q):
 
         # compute E[x_{t+1} | z_{0:t}], Var(x_{t+1} | z_{0:t})
         f_t = _last_dims(f, t, ndims=1)[0]
-        (points_pred, moments_pred) = unscented_transform(
-            points_state, f_t, points_noise=points_transition
-        )
+        transition_input = _last_dims(U, t, ndims=1) if U is not None else None
+        
+        # Wrap transition function to include input if provided
+        if transition_input is not None:
+            original_func = f_t
+            f_t_wrapped = lambda state, noise: original_func(state, transition_input, noise)
+            (points_pred, moments_pred) = unscented_transform(
+                points_state, f_t_wrapped, points_noise=points_transition
+            )
+        else:
+            (points_pred, moments_pred) = unscented_transform(
+                points_state, f_t, points_noise=points_transition
+            )
 
         # Calculate Cov(x_{t+1}, x_t | z_{0:t-1})
         sigma_pair = (
@@ -561,7 +594,7 @@ def augmented_unscented_smoother(mu_filt, sigma_filt, f, Q):
     return (mu_smooth, sigma_smooth)
 
 
-def additive_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z):
+def additive_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z, U=None):
     """Apply the Unscented Kalman Filter with additive noise.
 
     Parameters
@@ -572,7 +605,7 @@ def additive_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z):
         covariance of initial state distribution
     f : function or [T-1] array of functions
         state transition function(s). Takes in an the current state and outputs
-        the next.
+        the next. If U is provided, takes in the current state and control input.
     g : function or [T] array of functions
         observation function(s). Takes in the current state and outputs the
         current observation.
@@ -580,6 +613,9 @@ def additive_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z):
         transition covariance matrix
     R : [n_dim_state, n_dim_state] array
         observation covariance matrix
+    U : [T-1, n_dim_input] array, optional
+        control inputs for each time step. If provided, U[t] is the input
+        at time step t that affects the state at time t+1.
 
     Returns
     -------
@@ -613,8 +649,10 @@ def additive_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z):
             moments_pred = points2moments(points_pred)
         else:
             transition_function = _last_dims(f, t - 1, ndims=1)[0]
+            transition_input = _last_dims(U, t - 1, ndims=1) if U is not None else None
             (_, moments_pred) = unscented_filter_predict(
-                transition_function, points_state, sigma_transition=Q
+                transition_function, points_state, sigma_transition=Q,
+                transition_input=transition_input
             )
             points_pred = moments2points(moments_pred)
 
@@ -627,7 +665,7 @@ def additive_unscented_filter(mu_0, sigma_0, f, g, Q, R, Z):
     return (mu_filt, sigma_filt)
 
 
-def additive_unscented_smoother(mu_filt, sigma_filt, f, Q):
+def additive_unscented_smoother(mu_filt, sigma_filt, f, Q, U=None):
     """Apply the Unscented Kalman Filter assuming additive noise.
 
     Parameters
@@ -640,9 +678,12 @@ def additive_unscented_smoother(mu_filt, sigma_filt, f, Q):
         times [0, t]
     f : function or [T-1] array of functions
         state transition function(s). Takes in an the current state and outputs
-        the next.
+        the next. If U is provided, takes in the current state and control input.
     Q : [n_dim_state, n_dim_state] array
         transition covariance matrix
+    U : [T-1, n_dim_input] array, optional
+        control inputs for each time step. If provided, U[t] is the input
+        at time step t that affects the state at time t+1.
 
     Returns
     -------
@@ -671,9 +712,19 @@ def additive_unscented_smoother(mu_filt, sigma_filt, f, Q):
 
         # compute E[x_{t+1} | z_{0:t}], Var(x_{t+1} | z_{0:t})
         f_t = _last_dims(f, t, ndims=1)[0]
-        (points_pred, moments_pred) = unscented_transform(
-            points_state, f_t, sigma_noise=Q
-        )
+        transition_input = _last_dims(U, t, ndims=1) if U is not None else None
+        
+        # Wrap transition function to include input if provided
+        if transition_input is not None:
+            original_func = f_t
+            f_t_wrapped = lambda state: original_func(state, transition_input)
+            (points_pred, moments_pred) = unscented_transform(
+                points_state, f_t_wrapped, sigma_noise=Q
+            )
+        else:
+            (points_pred, moments_pred) = unscented_transform(
+                points_state, f_t, sigma_noise=Q
+            )
 
         # Calculate Cov(x_{t+1}, x_t | z_{0:t-1})
         sigma_pair = (
@@ -709,6 +760,7 @@ class UnscentedMixin:
         n_dim_state=None,
         n_dim_obs=None,
         random_state=None,
+        transition_inputs=None,
     ):
         # determine size of state and observation space
         n_dim_state = _determine_dimensionality(
@@ -733,10 +785,13 @@ class UnscentedMixin:
         self.n_dim_state = n_dim_state
         self.n_dim_obs = n_dim_obs
         self.random_state = random_state
+        self.transition_inputs = transition_inputs
 
     def _initialize_parameters(self):
         """Retrieve parameters if they exist, else replace with defaults."""
         arguments = get_params(self)
+        # Remove transition_inputs from arguments as it's handled separately
+        arguments.pop("transition_inputs", None)
         defaults = self._default_parameters()
         converters = self._converters()
 
@@ -797,7 +852,8 @@ class UnscentedKalmanFilter(UnscentedMixin):
     ----------
     transition_functions : function or [n_timesteps-1] array of functions
         transition_functions[t] is a function of the state and the transition
-        noise at time t and produces the state at time t+1.  Also known as
+        noise at time t and produces the state at time t+1. If transition_inputs
+        are provided, the function should accept (state, input, noise). Also known as
         :math:`f_t`.
     observation_functions : function or [n_timesteps] array of functions
         observation_functions[t] is a function of the state and the observation
@@ -821,9 +877,12 @@ class UnscentedKalmanFilter(UnscentedMixin):
         do not specify initial values for `observation_covariance`.
     random_state : optional, int or RandomState
         seed for random sample generation
+    transition_inputs : optional, [n_timesteps-1, n_dim_input] array
+        control inputs for each time step. If provided, transition_inputs[t]
+        is passed to transition_functions[t] as the second argument.
     """
 
-    def sample(self, n_timesteps, initial_state=None, random_state=None):
+    def sample(self, n_timesteps, initial_state=None, random_state=None, U=None):
         """Sample from model defined by the Unscented Kalman Filter.
 
         Parameters
@@ -835,6 +894,9 @@ class UnscentedKalmanFilter(UnscentedMixin):
             distribution.
         random_state : optional, int or Random
             random number generator
+        U : [n_timesteps-1, n_dim_input] array, optional
+            control inputs for each time step. If not provided, will use
+            self.transition_inputs if available.
         """
         (
             transition_functions,
@@ -847,6 +909,12 @@ class UnscentedKalmanFilter(UnscentedMixin):
 
         n_dim_state = transition_covariance.shape[-1]
         n_dim_obs = observation_covariance.shape[-1]
+
+        # Use provided inputs or fall back to instance inputs
+        if U is None:
+            U = self.transition_inputs
+        if U is not None:
+            U = ma.asarray(U)
 
         # logic for instantiating rng
         if random_state is None:
@@ -870,7 +938,11 @@ class UnscentedKalmanFilter(UnscentedMixin):
                 transition_func = _last_dims(transition_functions, t - 1, ndims=1)[0]
                 cov = newbyteorder(transition_covariance, "=")
                 transition_noise = rng.multivariate_normal(np.zeros(n_dim_state), cov)
-                x[t] = transition_func(x[t - 1], transition_noise)
+                if U is not None:
+                    transition_input = _last_dims(U, t - 1, ndims=1)
+                    x[t] = transition_func(x[t - 1], transition_input, transition_noise)
+                else:
+                    x[t] = transition_func(x[t - 1], transition_noise)
 
             observation_function = _last_dims(observation_functions, t, ndims=1)[0]
             cov = newbyteorder(observation_covariance, "=")
@@ -879,7 +951,7 @@ class UnscentedKalmanFilter(UnscentedMixin):
 
         return (x, ma.asarray(z))
 
-    def filter(self, Z):
+    def filter(self, Z, U=None):
         """Run Unscented Kalman Filter.
 
         Parameters
@@ -888,6 +960,9 @@ class UnscentedKalmanFilter(UnscentedMixin):
             Z[t] = observation at time t.  If Z is a masked array and any of
             Z[t]'s elements are masked, the observation is assumed missing and
             ignored.
+        U : [n_timesteps-1, n_dim_input] array, optional
+            U[t] = control input at time t. If not provided, will use
+            self.transition_inputs if available.
 
         Returns
         -------
@@ -909,6 +984,12 @@ class UnscentedKalmanFilter(UnscentedMixin):
             initial_state_covariance,
         ) = self._initialize_parameters()
 
+        # Use provided inputs or fall back to instance inputs
+        if U is None:
+            U = self.transition_inputs
+        if U is not None:
+            U = ma.asarray(U)
+
         (filtered_state_means, filtered_state_covariances) = augmented_unscented_filter(
             initial_state_mean,
             initial_state_covariance,
@@ -917,6 +998,7 @@ class UnscentedKalmanFilter(UnscentedMixin):
             transition_covariance,
             observation_covariance,
             Z,
+            U,
         )
 
         return (filtered_state_means, filtered_state_covariances)
@@ -930,6 +1012,7 @@ class UnscentedKalmanFilter(UnscentedMixin):
         transition_covariance=None,
         observation_function=None,
         observation_covariance=None,
+        transition_input=None,
     ):
         r"""Update a Kalman Filter state estimate.
 
@@ -963,6 +1046,9 @@ class UnscentedKalmanFilter(UnscentedMixin):
         observation_covariance : optional, [n_dim_obs, n_dim_obs] array
             observation covariance at time t+1.  If unspecified,
             `self.observation_covariance` will be used.
+        transition_input : optional, [n_dim_input] array
+            control input at time t. If unspecified and self.transition_inputs
+            is set, will use the first input from self.transition_inputs.
 
         Returns
         -------
@@ -1024,7 +1110,8 @@ class UnscentedKalmanFilter(UnscentedMixin):
 
         # predict
         (points_pred, moments_pred) = unscented_filter_predict(
-            transition_function, points_state, points_transition
+            transition_function, points_state, points_transition,
+            transition_input=transition_input
         )
 
         # correct
@@ -1041,7 +1128,7 @@ class UnscentedKalmanFilter(UnscentedMixin):
 
         return (next_filtered_state_mean, next_filtered_state_covariance)
 
-    def smooth(self, Z):
+    def smooth(self, Z, U=None):
         """Run Unscented Kalman Smoother.
 
         Parameters
@@ -1050,6 +1137,9 @@ class UnscentedKalmanFilter(UnscentedMixin):
             Z[t] = observation at time t.  If Z is a masked array and any of
             Z[t]'s elements are masked, the observation is assumed missing and
             ignored.
+        U : [n_timesteps-1, n_dim_input] array, optional
+            U[t] = control input at time t. If not provided, will use
+            self.transition_inputs if available.
 
         Returns
         -------
@@ -1071,7 +1161,13 @@ class UnscentedKalmanFilter(UnscentedMixin):
             initial_state_covariance,
         ) = self._initialize_parameters()
 
-        (filtered_state_means, filtered_state_covariances) = self.filter(Z)
+        # Use provided inputs or fall back to instance inputs
+        if U is None:
+            U = self.transition_inputs
+        if U is not None:
+            U = ma.asarray(U)
+
+        (filtered_state_means, filtered_state_covariances) = self.filter(Z, U)
         (
             smoothed_state_means,
             smoothed_state_covariances,
@@ -1080,6 +1176,7 @@ class UnscentedKalmanFilter(UnscentedMixin):
             filtered_state_covariances,
             transition_functions,
             transition_covariance,
+            U,
         )
 
         return (smoothed_state_means, smoothed_state_covariances)
@@ -1117,7 +1214,8 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
     ----------
     transition_functions : function or [n_timesteps-1] array of functions
         transition_functions[t] is a function of the state at time t and
-        produces the state at time t+1. Also known as :math:`f_t`.
+        produces the state at time t+1. If transition_inputs are provided,
+        the function should accept (state, input). Also known as :math:`f_t`.
     observation_functions : function or [n_timesteps] array of functions
         observation_functions[t] is a function of the state at time t and
         produces the observation at time t. Also known as :math:`g_t`.
@@ -1139,9 +1237,12 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
         do not specify initial values for `observation_covariance`.
     random_state : optional, int or RandomState
         seed for random sample generation
+    transition_inputs : optional, [n_timesteps-1, n_dim_input] array
+        control inputs for each time step. If provided, transition_inputs[t]
+        is passed to transition_functions[t] as the second argument.
     """
 
-    def sample(self, n_timesteps, initial_state=None, random_state=None):
+    def sample(self, n_timesteps, initial_state=None, random_state=None, U=None):
         """Sample from model defined by the Unscented Kalman Filter.
 
         Parameters
@@ -1151,6 +1252,11 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
         initial_state : optional, [n_dim_state] array
             initial state.  If unspecified, will be sampled from initial state
             distribution.
+        random_state : optional, int or Random
+            random number generator
+        U : [n_timesteps-1, n_dim_input] array, optional
+            control inputs for each time step. If not provided, will use
+            self.transition_inputs if available.
         """
         (
             transition_functions,
@@ -1163,6 +1269,12 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
 
         n_dim_state = transition_covariance.shape[-1]
         n_dim_obs = observation_covariance.shape[-1]
+
+        # Use provided inputs or fall back to instance inputs
+        if U is None:
+            U = self.transition_inputs
+        if U is not None:
+            U = ma.asarray(U)
 
         # logic for instantiating rng
         if random_state is None:
@@ -1186,7 +1298,11 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
                 transition_func = _last_dims(transition_functions, t - 1, ndims=1)[0]
                 cov = newbyteorder(transition_covariance, "=")
                 transition_noise = rng.multivariate_normal(np.zeros(n_dim_state), cov)
-                x[t] = transition_func(x[t - 1]) + transition_noise
+                if U is not None:
+                    transition_input = _last_dims(U, t - 1, ndims=1)
+                    x[t] = transition_func(x[t - 1], transition_input) + transition_noise
+                else:
+                    x[t] = transition_func(x[t - 1]) + transition_noise
 
             observation_function = _last_dims(observation_functions, t, ndims=1)[0]
             cov = newbyteorder(observation_covariance, "=")
@@ -1195,7 +1311,7 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
 
         return (x, ma.asarray(z))
 
-    def filter(self, Z):
+    def filter(self, Z, U=None):
         """Run Unscented Kalman Filter.
 
         Parameters
@@ -1204,6 +1320,9 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
             Z[t] = observation at time t.  If Z is a masked array and any of
             Z[t]'s elements are masked, the observation is assumed missing and
             ignored.
+        U : [n_timesteps-1, n_dim_input] array, optional
+            U[t] = control input at time t. If not provided, will use
+            self.transition_inputs if available.
 
         Returns
         -------
@@ -1225,6 +1344,12 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
             initial_state_covariance,
         ) = self._initialize_parameters()
 
+        # Use provided inputs or fall back to instance inputs
+        if U is None:
+            U = self.transition_inputs
+        if U is not None:
+            U = ma.asarray(U)
+
         (filtered_state_means, filtered_state_covariances) = additive_unscented_filter(
             initial_state_mean,
             initial_state_covariance,
@@ -1233,6 +1358,7 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
             transition_covariance,
             observation_covariance,
             Z,
+            U,
         )
 
         return (filtered_state_means, filtered_state_covariances)
@@ -1246,6 +1372,7 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
         transition_covariance=None,
         observation_function=None,
         observation_covariance=None,
+        transition_input=None,
     ):
         r"""Update a Kalman Filter state estimate.
 
@@ -1279,6 +1406,9 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
         observation_covariance : optional, [n_dim_obs, n_dim_obs] array
             observation covariance at time t+1.  If unspecified,
             `self.observation_covariance` will be used.
+        transition_input : optional, [n_dim_input] array
+            control input at time t. If unspecified and self.transition_inputs
+            is set, will use the first input from self.transition_inputs.
 
         Returns
         -------
@@ -1332,7 +1462,8 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
 
         # predict
         (_, moments_pred) = unscented_filter_predict(
-            transition_function, points_state, sigma_transition=transition_covariance
+            transition_function, points_state, sigma_transition=transition_covariance,
+            transition_input=transition_input
         )
         points_pred = moments2points(moments_pred)
 
@@ -1350,7 +1481,7 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
 
         return (next_filtered_state_mean, next_filtered_state_covariance)
 
-    def smooth(self, Z):
+    def smooth(self, Z, U=None):
         """Run Unscented Kalman Smoother.
 
         Parameters
@@ -1359,6 +1490,9 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
             Z[t] = observation at time t.  If Z is a masked array and any of
             Z[t]'s elements are masked, the observation is assumed missing and
             ignored.
+        U : [n_timesteps-1, n_dim_input] array, optional
+            U[t] = control input at time t. If not provided, will use
+            self.transition_inputs if available.
 
         Returns
         -------
@@ -1380,7 +1514,13 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
             initial_state_covariance,
         ) = self._initialize_parameters()
 
-        (filtered_state_means, filtered_state_covariances) = self.filter(Z)
+        # Use provided inputs or fall back to instance inputs
+        if U is None:
+            U = self.transition_inputs
+        if U is not None:
+            U = ma.asarray(U)
+
+        (filtered_state_means, filtered_state_covariances) = self.filter(Z, U)
         (
             smoothed_state_means,
             smoothed_state_covariances,
@@ -1389,6 +1529,7 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
             filtered_state_covariances,
             transition_functions,
             transition_covariance,
+            U,
         )
 
         return (smoothed_state_means, smoothed_state_covariances)
