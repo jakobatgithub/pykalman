@@ -33,6 +33,7 @@ DIM = {
     "observation_covariance": 2,
     "initial_state_mean": 1,
     "initial_state_covariance": 2,
+    "jump_offsets": 1,
 }
 
 
@@ -188,6 +189,7 @@ def _filter_predict(
     transition_offset,
     current_state_mean,
     current_state_covariance,
+    jump_offset=None,
 ):
     r"""Calculate the mean and covariance of :math:`P(x_{t+1} | z_{0:t})`.
 
@@ -208,6 +210,10 @@ def _filter_predict(
     current_state_covariance: [n_dim_state, n_dim_state] array
         covariance of state at time t given observations from times
         [0...t]
+    jump_offset : [n_dim_state] array, optional
+        instantaneous jump (Dirac Delta-like input) applied to the state
+        after the transition. Represents a sudden change or perturbation
+        to the system state.
 
     Returns
     -------
@@ -224,6 +230,10 @@ def _filter_predict(
         np.dot(transition_matrix, np.dot(current_state_covariance, transition_matrix.T))
         + transition_covariance
     )
+
+    # Apply jump offset if provided (Dirac Delta-like input)
+    if jump_offset is not None:
+        predicted_state_mean = predicted_state_mean + jump_offset
 
     return (predicted_state_mean, predicted_state_covariance)
 
@@ -311,6 +321,7 @@ def _filter(
     initial_state_mean,
     initial_state_covariance,
     observations,
+    jump_offsets=None,
 ):
     """Apply the Kalman Filter.
 
@@ -343,6 +354,9 @@ def _filter(
     observations : [n_timesteps, n_dim_obs] array or masked array
         observations from times [0...n_timesteps-1]. Missing entries 
         should be masked.
+    jump_offsets : [n_timesteps-1, n_dim_state] or [n_dim_state] array-like, optional
+        instantaneous jumps (Dirac Delta-like inputs) applied after state transitions.
+        Represents sudden changes or perturbations to the system state at each timestep.
 
     Returns
     -------
@@ -379,12 +393,14 @@ def _filter(
             transition_matrix = _last_dims(transition_matrices, t - 1)
             transition_covariance = _last_dims(transition_covariance, t - 1)
             transition_offset = _last_dims(transition_offsets, t - 1, ndims=1)
+            jump_offset = _last_dims(jump_offsets, t - 1, ndims=1) if jump_offsets is not None else None
             predicted_state_means[t], predicted_state_covariances[t] = _filter_predict(
                 transition_matrix,
                 transition_covariance,
                 transition_offset,
                 filtered_state_means[t - 1],
                 filtered_state_covariances[t - 1],
+                jump_offset,
             )
 
         observation_matrix = _last_dims(observation_matrices, t)
@@ -1022,6 +1038,11 @@ class KalmanFilter:
     initial_state_covariance : [n_dim_state, n_dim_state] array-like
         Also known as :math:`\\Sigma_0`.  covariance of initial state
         distribution
+    jump_offsets : [n_timesteps-1, n_dim_state] or [n_dim_state] array-like, \
+    optional
+        instantaneous jumps (Dirac Delta-like inputs) applied after state
+        transitions. Represents sudden changes or perturbations to the system
+        state at times [0...n_timesteps-2]
     random_state : optional, numpy random state
         random number generator used in sampling
     em_vars : optional, subset of ['transition_matrices', \
@@ -1052,6 +1073,7 @@ class KalmanFilter:
         observation_offsets=None,
         initial_state_mean=None,
         initial_state_covariance=None,
+        jump_offsets=None,
         random_state=None,
         em_vars=None,
         n_dim_state=None,
@@ -1087,6 +1109,7 @@ class KalmanFilter:
         self.observation_offsets = observation_offsets
         self.initial_state_mean = initial_state_mean
         self.initial_state_covariance = initial_state_covariance
+        self.jump_offsets = jump_offsets
         self.random_state = random_state
         self.em_vars = em_vars
         self.n_dim_state = n_dim_state
@@ -1126,6 +1149,7 @@ class KalmanFilter:
             observation_covariance,
             initial_state_mean,
             initial_state_covariance,
+            jump_offsets,
         ) = self._initialize_parameters()
 
         n_dim_state = transition_matrices.shape[-2]
@@ -1211,6 +1235,7 @@ class KalmanFilter:
             observation_covariance,
             initial_state_mean,
             initial_state_covariance,
+            jump_offsets,
         ) = self._initialize_parameters()
 
         (_, _, _, filtered_state_means, filtered_state_covariances) = _filter(
@@ -1223,6 +1248,7 @@ class KalmanFilter:
             initial_state_mean,
             initial_state_covariance,
             Z,
+            jump_offsets,
         )
         return (filtered_state_means, filtered_state_covariances)
 
@@ -1237,6 +1263,7 @@ class KalmanFilter:
         observation_matrix=None,
         observation_offset=None,
         observation_covariance=None,
+        jump_offset=None,
     ):
         r"""Update a Kalman Filter state estimate.
 
@@ -1274,6 +1301,9 @@ class KalmanFilter:
         observation_covariance : optional, [n_dim_obs, n_dim_obs] array
             observation covariance at time t+1.  If unspecified,
             `self.observation_covariance` will be used.
+        jump_offset : optional, [n_dim_state] array
+            instantaneous jump (Dirac Delta-like input) applied after the
+            state transition. If unspecified, no jump is applied.
 
         Returns
         -------
@@ -1294,6 +1324,7 @@ class KalmanFilter:
             observation_cov,
             initial_state_mean,
             initial_state_covariance,
+            jump_offsets,
         ) = self._initialize_parameters()
         transition_offset = _arg_or_default(
             transition_offset, transition_offsets, 1, "transition_offset"
@@ -1313,6 +1344,10 @@ class KalmanFilter:
         observation_covariance = _arg_or_default(
             observation_covariance, observation_cov, 2, "observation_covariance"
         )
+        if jump_offset is None and jump_offsets is not None:
+            jump_offset = _arg_or_default(
+                jump_offset, jump_offsets, 1, "jump_offset"
+            )
 
         # Make a masked observation if necessary
         if observation is None:
@@ -1328,6 +1363,7 @@ class KalmanFilter:
             transition_offset,
             filtered_state_mean,
             filtered_state_covariance,
+            jump_offset,
         )
         (_, next_filtered_state_mean, next_filtered_state_covariance) = _filter_correct(
             observation_matrix,
@@ -1373,6 +1409,7 @@ class KalmanFilter:
             observation_covariance,
             initial_state_mean,
             initial_state_covariance,
+            jump_offsets,
         ) = self._initialize_parameters()
 
         (
@@ -1391,6 +1428,7 @@ class KalmanFilter:
             initial_state_mean,
             initial_state_covariance,
             Z,
+            jump_offsets,
         )
         (smoothed_state_means, smoothed_state_covariances) = _smooth(
             transition_matrices,
@@ -1435,6 +1473,7 @@ class KalmanFilter:
             self.observation_covariance,
             self.initial_state_mean,
             self.initial_state_covariance,
+            self.jump_offsets,
         ) = self._initialize_parameters()
 
         if em_var_masks is None:
@@ -1476,7 +1515,7 @@ class KalmanFilter:
 
         # If a parameter is time varying, print a warning
         for k, v in get_params(self).items():
-            if k in DIM and (k not in given) and len(v.shape) != DIM[k]:
+            if k in DIM and (k not in given) and v is not None and len(v.shape) != DIM[k]:
                 warn_str = (
                     "{0} has {1} dimensions now; after fitting, "
                     + "it will have dimension {2}"
@@ -1501,6 +1540,7 @@ class KalmanFilter:
                 self.initial_state_mean,
                 self.initial_state_covariance,
                 Z,
+                self.jump_offsets,
             )
             (
                 smoothed_state_means,
@@ -1579,6 +1619,7 @@ class KalmanFilter:
             observation_covariance,
             initial_state_mean,
             initial_state_covariance,
+            jump_offsets,
         ) = self._initialize_parameters()
 
         # apply the Kalman Filter
@@ -1598,6 +1639,7 @@ class KalmanFilter:
             initial_state_mean,
             initial_state_covariance,
             Z,
+            jump_offsets,
         )
 
         # get likelihoods for each time step
@@ -1649,7 +1691,16 @@ class KalmanFilter:
             "em_vars": lambda x: x,
         }
 
-        parameters = preprocess_arguments([arguments, defaults], converters)
+        # Handle jump_offsets separately since it can be None and preprocess_arguments doesn't handle None well
+        if arguments.get("jump_offsets") is not None:
+            jump_offsets = array1d(arguments["jump_offsets"])
+        else:
+            jump_offsets = None
+        
+        # Remove jump_offsets from arguments before preprocessing
+        arguments_without_jumps = {k: v for k, v in arguments.items() if k != "jump_offsets"}
+        
+        parameters = preprocess_arguments([arguments_without_jumps, defaults], converters)
 
         return (
             parameters["transition_matrices"],
@@ -1660,6 +1711,7 @@ class KalmanFilter:
             parameters["observation_covariance"],
             parameters["initial_state_mean"],
             parameters["initial_state_covariance"],
+            jump_offsets,
         )
 
     def _parse_observations(self, obs):
