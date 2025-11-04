@@ -837,7 +837,7 @@ class UnscentedMixin:
     def _initialize_parameters(self):
         """Retrieve parameters if they exist, else replace with defaults."""
         arguments = get_params(self)
-        # Remove transition_inputs and jump_offsets from arguments as they're handled separately
+        # Remove transition_inputs and jump_offsets from arguments as they are handled separately
         arguments.pop("transition_inputs", None)
         arguments.pop("jump_offsets", None)
         defaults = self._default_parameters()
@@ -1509,6 +1509,10 @@ class AdditiveUnscentedKalmanFilter(UnscentedMixin):
         transition_input : optional, [n_dim_input] array
             control input at time t. If unspecified and self.transition_inputs
             is set, will use the first input from self.transition_inputs.
+        jump_offset : optional, [n_dim_state] array
+            instantaneous jump applied to the state at time t. If unspecified
+            and self.jump_offsets is set, will use the first offset from
+            self.jump_offsets.
 
         Returns
         -------
