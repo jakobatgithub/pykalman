@@ -192,21 +192,25 @@ def unscented_correct(cross_sigma, moments_pred, obs_moments_pred, z):
     mu_pred, sigma_pred = moments_pred
     obs_mu_pred, obs_sigma_pred = obs_moments_pred
 
+    # Ensure arrays have consistent dimensionality
+    z = np.atleast_1d(z)
+    obs_mu_pred = np.atleast_1d(obs_mu_pred)
+    obs_sigma_pred = np.atleast_2d(obs_sigma_pred)
+
     # Determine which observation components are available
     if ma.isMaskedArray(z):
         mask = ~z.mask
     else:
         mask = ~np.isnan(z)
     
-    # Ensure mask is at least 1D array
-    mask = np.atleast_1d(mask)
+    # Ensure mask is a 1D boolean array
+    mask = np.atleast_1d(mask).astype(bool)
     
     if np.any(mask):  # At least one component is observed
         # Extract only the observed components
-        z_obs = np.atleast_1d(z)[mask]
-        obs_mu_pred_obs = np.atleast_1d(obs_mu_pred)[mask]
-        obs_sigma_pred_2d = np.atleast_2d(obs_sigma_pred)
-        obs_sigma_pred_obs = obs_sigma_pred_2d[np.ix_(mask, mask)]
+        z_obs = z[mask]
+        obs_mu_pred_obs = obs_mu_pred[mask]
+        obs_sigma_pred_obs = obs_sigma_pred[np.ix_(mask, mask)]
         cross_sigma_obs = cross_sigma[:, mask]
         
         # Calculate Kalman gain for observed components
