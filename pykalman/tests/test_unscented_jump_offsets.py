@@ -418,3 +418,228 @@ class TestUnscentedJumpOffsets:
         # With positive jumps, states should generally increase
         state_differences = np.diff(states, axis=0)
         assert np.mean(state_differences) > 0.3  # Should be close to 0.5
+
+    def test_filter_jump_offsets_parameter(self):
+        """Test that jump_offsets can be passed as parameter to filter()."""
+        n_timesteps = 10
+        
+        # System parameters
+        transition_covariance = np.array([[0.1]])
+        observation_covariance = np.array([[0.1]])
+        initial_state_mean = np.array([0.0])
+        initial_state_covariance = np.array([[1.0]])
+        jump_offsets = np.array([0.5])
+        
+        # Generate observations
+        np.random.seed(42)
+        observations = np.random.randn(n_timesteps, 1)
+        
+        # Define transition and observation functions
+        def transition_function(state, noise):
+            return state + noise
+        
+        def observation_function(state, noise):
+            return state + noise
+        
+        # Create UKF without jump_offsets in constructor
+        ukf = UnscentedKalmanFilter(
+            transition_functions=transition_function,
+            observation_functions=observation_function,
+            transition_covariance=transition_covariance,
+            observation_covariance=observation_covariance,
+            initial_state_mean=initial_state_mean,
+            initial_state_covariance=initial_state_covariance,
+        )
+        
+        # Filter with jump_offsets passed as parameter
+        filtered_with_param, _ = ukf.filter(observations, jump_offsets=jump_offsets)
+        
+        # Filter without jump_offsets
+        filtered_without, _ = ukf.filter(observations)
+        
+        # Results should be different
+        assert not np.allclose(filtered_with_param, filtered_without)
+        
+        # With positive jumps, states should be higher
+        assert np.mean(filtered_with_param) > np.mean(filtered_without)
+
+    def test_smooth_jump_offsets_parameter(self):
+        """Test that jump_offsets can be passed as parameter to smooth()."""
+        n_timesteps = 10
+        
+        # System parameters
+        transition_covariance = np.array([[0.1]])
+        observation_covariance = np.array([[0.1]])
+        initial_state_mean = np.array([0.0])
+        initial_state_covariance = np.array([[1.0]])
+        jump_offsets = np.array([0.5])
+        
+        # Random observations
+        np.random.seed(42)
+        observations = np.random.randn(n_timesteps, 1)
+        
+        # Define transition and observation functions
+        def transition_function(state, noise):
+            return state + noise
+        
+        def observation_function(state, noise):
+            return state + noise
+        
+        # Create UKF without jump_offsets in constructor
+        ukf = UnscentedKalmanFilter(
+            transition_functions=transition_function,
+            observation_functions=observation_function,
+            transition_covariance=transition_covariance,
+            observation_covariance=observation_covariance,
+            initial_state_mean=initial_state_mean,
+            initial_state_covariance=initial_state_covariance,
+        )
+        
+        # Smooth with jump_offsets passed as parameter
+        smoothed_with_param, _ = ukf.smooth(observations, jump_offsets=jump_offsets)
+        
+        # Smooth without jump_offsets
+        smoothed_without, _ = ukf.smooth(observations)
+        
+        # Results should be different
+        assert not np.allclose(smoothed_with_param, smoothed_without)
+        
+        # With positive jumps, states should be higher
+        assert np.mean(smoothed_with_param) > np.mean(smoothed_without)
+
+    def test_parameter_overrides_constructor(self):
+        """Test that jump_offsets parameter overrides constructor value."""
+        n_timesteps = 10
+        
+        # System parameters
+        transition_covariance = np.array([[0.1]])
+        observation_covariance = np.array([[0.1]])
+        initial_state_mean = np.array([0.0])
+        initial_state_covariance = np.array([[1.0]])
+        
+        # Constructor jump offset
+        jump_offsets_constructor = np.array([0.5])
+        # Parameter jump offset (different and larger)
+        jump_offsets_parameter = np.array([1.0])
+        
+        # Generate observations
+        np.random.seed(42)
+        observations = np.random.randn(n_timesteps, 1)
+        
+        # Define transition and observation functions
+        def transition_function(state, noise):
+            return state + noise
+        
+        def observation_function(state, noise):
+            return state + noise
+        
+        # Create UKF with jump_offsets in constructor
+        ukf = UnscentedKalmanFilter(
+            transition_functions=transition_function,
+            observation_functions=observation_function,
+            transition_covariance=transition_covariance,
+            observation_covariance=observation_covariance,
+            initial_state_mean=initial_state_mean,
+            initial_state_covariance=initial_state_covariance,
+            jump_offsets=jump_offsets_constructor,
+        )
+        
+        # Filter with constructor value
+        filtered_constructor, _ = ukf.filter(observations)
+        
+        # Filter with parameter value (should override constructor)
+        filtered_parameter, _ = ukf.filter(observations, jump_offsets=jump_offsets_parameter)
+        
+        # Results should be different
+        assert not np.allclose(filtered_constructor, filtered_parameter)
+        
+        # Parameter has larger jumps, so states should be higher
+        assert np.mean(filtered_parameter) > np.mean(filtered_constructor)
+
+    def test_additive_filter_jump_offsets_parameter(self):
+        """Test that jump_offsets can be passed as parameter to AdditiveUKF filter()."""
+        n_timesteps = 10
+        
+        # System parameters
+        transition_covariance = np.array([[0.1]])
+        observation_covariance = np.array([[0.1]])
+        initial_state_mean = np.array([0.0])
+        initial_state_covariance = np.array([[1.0]])
+        jump_offsets = np.array([0.5])
+        
+        # Generate observations
+        np.random.seed(42)
+        observations = np.random.randn(n_timesteps, 1)
+        
+        # Define transition and observation functions
+        def transition_function(state):
+            return state
+        
+        def observation_function(state):
+            return state
+        
+        # Create Additive UKF without jump_offsets in constructor
+        aukf = AdditiveUnscentedKalmanFilter(
+            transition_functions=transition_function,
+            observation_functions=observation_function,
+            transition_covariance=transition_covariance,
+            observation_covariance=observation_covariance,
+            initial_state_mean=initial_state_mean,
+            initial_state_covariance=initial_state_covariance,
+        )
+        
+        # Filter with jump_offsets passed as parameter
+        filtered_with_param, _ = aukf.filter(observations, jump_offsets=jump_offsets)
+        
+        # Filter without jump_offsets
+        filtered_without, _ = aukf.filter(observations)
+        
+        # Results should be different
+        assert not np.allclose(filtered_with_param, filtered_without)
+        
+        # With positive jumps, states should be higher
+        assert np.mean(filtered_with_param) > np.mean(filtered_without)
+
+    def test_additive_smooth_jump_offsets_parameter(self):
+        """Test that jump_offsets can be passed as parameter to AdditiveUKF smooth()."""
+        n_timesteps = 10
+        
+        # System parameters
+        transition_covariance = np.array([[0.1]])
+        observation_covariance = np.array([[0.1]])
+        initial_state_mean = np.array([0.0])
+        initial_state_covariance = np.array([[1.0]])
+        jump_offsets = np.array([0.5])
+        
+        # Random observations
+        np.random.seed(42)
+        observations = np.random.randn(n_timesteps, 1)
+        
+        # Define transition and observation functions
+        def transition_function(state):
+            return state
+        
+        def observation_function(state):
+            return state
+        
+        # Create Additive UKF without jump_offsets in constructor
+        aukf = AdditiveUnscentedKalmanFilter(
+            transition_functions=transition_function,
+            observation_functions=observation_function,
+            transition_covariance=transition_covariance,
+            observation_covariance=observation_covariance,
+            initial_state_mean=initial_state_mean,
+            initial_state_covariance=initial_state_covariance,
+        )
+        
+        # Smooth with jump_offsets passed as parameter
+        smoothed_with_param, _ = aukf.smooth(observations, jump_offsets=jump_offsets)
+        
+        # Smooth without jump_offsets
+        smoothed_without, _ = aukf.smooth(observations)
+        
+        # Results should be different
+        assert not np.allclose(smoothed_with_param, smoothed_without)
+        
+        # With positive jumps, states should be higher
+        assert np.mean(smoothed_with_param) > np.mean(smoothed_without)
