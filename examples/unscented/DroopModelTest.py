@@ -135,8 +135,7 @@ R = np.diag([R_S, R_X])
 # transition_functions[t] is used to go from time t to t+1, so length = n_steps - 1
 transition_functions = []
 for k in range(n_steps):
-    t = times[k]
-    def make_f(t_local, offset_k):
+    def make_f(offset_k):
         def f(state, noise):
             # Apply dynamics: jump + continuous integration + process noise
             x = state.copy()
@@ -151,7 +150,7 @@ for k in range(n_steps):
             # Additive process noise
             return x + noise
         return f
-    transition_functions.append(make_f(t, jump_offsets[k]))
+    transition_functions.append(make_f(jump_offsets[k]))
 
 # observation_functions for each time index (length = n_steps)
 observation_functions = []
