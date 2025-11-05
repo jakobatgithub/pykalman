@@ -137,17 +137,20 @@ transition_functions = []
 for k in range(n_steps):
     def make_f(offset_k):
         def f(state, noise):
-            # Apply dynamics: jump + continuous integration + process noise
+            # Transition dynamics: (1) deterministic jump, (2) continuous integration, (3) process noise
             x = state.copy()
-            # Apply precomputed deterministic jump offset.
+            
+            # Step 1: Apply precomputed deterministic jump offset.
             # Key insight: For deterministic time-based jumps (especially multiplicative
             # ones like harvesting), using precomputed offsets ensures all UKF sigma
             # points receive the same absolute jump, rather than state-dependent jumps
             # that would cause excessive spreading of the sigma points.
             x = x + offset_k
-            # Continuous dynamics via Euler integration
+            
+            # Step 2: Continuous dynamics via Euler integration
             x = x + dt * droop_rhs(x)
-            # Additive process noise
+            
+            # Step 3: Additive process noise
             return x + noise
         return f
     transition_functions.append(make_f(jump_offsets[k]))
