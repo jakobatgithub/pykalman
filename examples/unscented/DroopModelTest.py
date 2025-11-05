@@ -48,13 +48,11 @@ def apply_pulses(state, t):
     S, X, Q = state.copy()
     # Feed pulse at multiples of feed_period
     if ((t % feed_period) < dt) or np.isclose((t % feed_period), 0.0, atol=dt/2):
-        # S = S + feed_amplitude
-        pass
+        S = S + feed_amplitude
     # Harvest pulse
     if (((t - harvest_phase) % harvest_period) < dt) or np.isclose(((t - harvest_phase) % harvest_period), 0.0, atol=dt/2):
-        # X = X - harvested_fraction * X
-        # S = S - harvested_fraction * S
-        pass
+        X = X - harvested_fraction * X
+        S = S - harvested_fraction * S
     return np.array([S, X, Q])
 
 def simulate_true(x0):
@@ -80,8 +78,6 @@ plt.legend()
 plt.show()
 
 # %%
-import numpy as np
-
 def make_jump_offsets_from_traj(traj, times, apply_pulses):
     """
     Returns an array of jump offsets with the same shape as traj.
