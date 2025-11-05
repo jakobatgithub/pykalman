@@ -100,7 +100,12 @@ def make_jump_offsets_from_traj(traj, times, apply_pulses):
         offsets[k] = x_after - x_prev
     return offsets
 
-# Generate jump_offsets from your true trajectory:
+# Generate jump_offsets from the true trajectory.
+# Note: In a real application, deterministic jumps (like feeding) can be computed
+# from known schedules. For state-dependent jumps (like harvesting), you could:
+# 1) Use a predetermined schedule based on expected states, or
+# 2) Adapt the jumps based on current filtered estimates.
+# Here we use the true trajectory for demonstration purposes.
 jump_offsets = make_jump_offsets_from_traj(true_traj, times, apply_pulses)
 
 # Observations: measure S and X
@@ -131,17 +136,22 @@ R = np.diag([R_S, R_X])
 transition_functions = []
 for k in range(n_steps):
     t = times[k]
-    def make_f(t_local):
+    def make_f(t_local, offset_k):
         def f(state, noise):
-            # integrate dt, then add process noise.
+            # Apply dynamics: jump + continuous integration + process noise
             x = state.copy()
-            x = apply_pulses(x, t_local)
-            # x = x + jump_offsets[k]  # apply jump offset for transition k -> k+1
+            # Apply precomputed deterministic jump offset.
+            # Key insight: For deterministic time-based jumps (especially multiplicative
+            # ones like harvesting), using precomputed offsets ensures all UKF sigma
+            # points receive the same absolute jump, rather than state-dependent jumps
+            # that would cause excessive spreading of the sigma points.
+            x = x + offset_k
+            # Continuous dynamics via Euler integration
             x = x + dt * droop_rhs(x)
-            # additive noise (assumed to be same shape as state)
+            # Additive process noise
             return x + noise
         return f
-    transition_functions.append(make_f(t))
+    transition_functions.append(make_f(t, jump_offsets[k]))
 
 # observation_functions for each time index (length = n_steps)
 observation_functions = []
