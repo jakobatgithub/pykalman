@@ -105,6 +105,6 @@ plt.legend(loc='best')
 plt.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('/tmp/ukf_missing_observations.png', dpi=150, bbox_inches='tight')
-print("Plot saved to /tmp/ukf_missing_observations.png")
+plt.savefig('ukf_missing_observations.png', dpi=150, bbox_inches='tight')
+print("Plot saved to ukf_missing_observations.png")
 plt.show()
